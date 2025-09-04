@@ -1,16 +1,18 @@
-"use client";
-
-import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
+import { redirect } from 'next/navigation';
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { deletePoll } from "@/app/lib/actions/poll-actions";
-import { createClient } from "@/lib/supabase/client";
+} from '@/components/ui/card';
+import {
+  getAllPolls,
+  isUserAdmin,
+  getUserStats,
+} from '@/app/lib/actions/admin-actions';
+import { createClient } from '@/lib/supabase/server';
+import AdminDeleteButton from '@/app/components/admin/AdminDeleteButton';
 
 interface Poll {
   id: string;
@@ -20,43 +22,50 @@ interface Poll {
   options: string[];
 }
 
-export default function AdminPage() {
-  const [polls, setPolls] = useState<Poll[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
+interface Stats {
+  totalUsers: number;
+  totalPolls: number;
+  totalVotes: number;
+}
 
-  useEffect(() => {
-    fetchAllPolls();
-  }, []);
+export default async function AdminPage() {
+  // Server-side authentication and authorization check
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
 
-  const fetchAllPolls = async () => {
-    const supabase = createClient();
-
-    const { data, error } = await supabase
-      .from("polls")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (!error && data) {
-      setPolls(data);
-    }
-    setLoading(false);
-  };
-
-  const handleDelete = async (pollId: string) => {
-    setDeleteLoading(pollId);
-    const result = await deletePoll(pollId);
-
-    if (!result.error) {
-      setPolls(polls.filter((poll) => poll.id !== pollId));
-    }
-
-    setDeleteLoading(null);
-  };
-
-  if (loading) {
-    return <div className="p-6">Loading all polls...</div>;
+  // Redirect if not authenticated
+  if (userError || !user) {
+    redirect('/login');
   }
+
+  // Server-side admin check
+  const isAdmin = await isUserAdmin();
+  if (!isAdmin) {
+    return (
+      <div className="p-6">
+        <Card className="border-red-200 bg-red-50">
+          <CardHeader>
+            <CardTitle className="text-red-800">Access Denied</CardTitle>
+            <CardDescription className="text-red-600">
+              You do not have administrator privileges to access this page.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
+  }
+
+  // Fetch data server-side
+  const [pollsResult, statsResult] = await Promise.all([
+    getAllPolls(),
+    getUserStats(),
+  ]);
+
+  const polls: Poll[] = pollsResult.polls || [];
+  const stats: Stats | null = statsResult.stats || null;
 
   return (
     <div className="p-6 space-y-6">
@@ -66,6 +75,42 @@ export default function AdminPage() {
           View and manage all polls in the system.
         </p>
       </div>
+
+      {/* Statistics Cards */}
+      {stats && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600">
+                Total Users
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.totalUsers}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600">
+                Total Polls
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.totalPolls}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600">
+                Total Votes
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.totalVotes}</div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <div className="grid gap-4">
         {polls.map((poll) => (
@@ -77,32 +122,25 @@ export default function AdminPage() {
                   <CardDescription>
                     <div className="space-y-1 mt-2">
                       <div>
-                        Poll ID:{" "}
+                        Poll ID:{' '}
                         <code className="bg-gray-100 px-2 py-1 rounded text-sm font-mono">
                           {poll.id}
                         </code>
                       </div>
                       <div>
-                        Owner ID:{" "}
+                        Owner ID:{' '}
                         <code className="bg-gray-100 px-2 py-1 rounded text-sm font-mono">
                           {poll.user_id}
                         </code>
                       </div>
                       <div>
-                        Created:{" "}
+                        Created:{' '}
                         {new Date(poll.created_at).toLocaleDateString()}
                       </div>
                     </div>
                   </CardDescription>
                 </div>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => handleDelete(poll.id)}
-                  disabled={deleteLoading === poll.id}
-                >
-                  {deleteLoading === poll.id ? "Deleting..." : "Delete"}
-                </Button>
+                <AdminDeleteButton pollId={poll.id} />
               </div>
             </CardHeader>
             <CardContent>

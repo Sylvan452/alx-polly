@@ -13,15 +13,15 @@ import {
 import { Copy, Share2, Twitter, Facebook, Mail } from "lucide-react";
 import { toast } from "sonner";
 
-interface VulnerableShareProps {
+interface ShareProps {
   pollId: string;
   pollTitle: string;
 }
 
-export default function VulnerableShare({
+export default function Share({
   pollId,
   pollTitle,
-}: VulnerableShareProps) {
+}: ShareProps) {
   const [shareUrl, setShareUrl] = useState("");
 
   useEffect(() => {
@@ -40,8 +40,26 @@ export default function VulnerableShare({
     }
   };
 
+  // Sanitize pollTitle to prevent XSS
+  const sanitizePollTitle = (title: string): string => {
+    return title
+      .replace(/[<>"'&]/g, (match) => {
+        const entityMap: { [key: string]: string } = {
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#x27;',
+          '&': '&amp;'
+        };
+        return entityMap[match] || match;
+      })
+      .trim()
+      .substring(0, 100); // Limit length
+  };
+
   const shareOnTwitter = () => {
-    const text = encodeURIComponent(`Check out this poll: ${pollTitle}`);
+    const sanitizedTitle = sanitizePollTitle(pollTitle);
+    const text = encodeURIComponent(`Check out this poll: ${sanitizedTitle}`);
     const url = encodeURIComponent(shareUrl);
     window.open(
       `https://twitter.com/intent/tweet?text=${text}&url=${url}`,
@@ -58,7 +76,8 @@ export default function VulnerableShare({
   };
 
   const shareViaEmail = () => {
-    const subject = encodeURIComponent(`Poll: ${pollTitle}`);
+    const sanitizedTitle = sanitizePollTitle(pollTitle);
+    const subject = encodeURIComponent(`Poll: ${sanitizedTitle}`);
     const body = encodeURIComponent(
       `Hi! I'd like to share this poll with you: ${shareUrl}`,
     );
