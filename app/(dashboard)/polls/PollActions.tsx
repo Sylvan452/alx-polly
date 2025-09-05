@@ -20,7 +20,9 @@ export default function PollActions({ poll }: PollActionsProps) {
   const { user } = useAuth();
   const handleDelete = async () => {
     if (confirm("Are you sure you want to delete this poll?")) {
-      await deletePoll(poll.id);
+      const formData = new FormData();
+      formData.append('pollId', poll.id);
+      await deletePoll(formData);
       window.location.reload();
     }
   };

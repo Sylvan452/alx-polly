@@ -12,7 +12,7 @@ import {
   getUserStats,
 } from '@/app/lib/actions/admin-actions';
 import { createClient } from '@/lib/supabase/server';
-import AdminDeleteButton from '@/app/components/admin/AdminDeleteButton';
+import AdminDeleteButton from '@/components/admin/AdminDeleteButton';
 
 interface Poll {
   id: string;

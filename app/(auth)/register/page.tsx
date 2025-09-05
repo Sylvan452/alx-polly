@@ -17,8 +17,6 @@ export default function RegisterPage() {
     setLoading(true);
     setError(null);
     const formData = new FormData(event.currentTarget);
-    const name = formData.get('name') as string;
-    const email = formData.get('email') as string;
     const password = formData.get('password') as string;
     const confirmPassword = formData.get('confirmPassword') as string;
 
@@ -28,7 +26,7 @@ export default function RegisterPage() {
       return;
     }
 
-    const result = await register({ name, email, password });
+    const result = await register(formData);
 
     if (result?.error) {
       setError(result.error);

@@ -88,10 +88,11 @@ export async function adminDeletePoll(formData: FormData) {
     });
 
     if (user) {
-      logSecurityEvent('ERROR_OCCURRED', {
+      await logSecurityEvent('ERROR_OCCURRED', {
         action: 'admin_poll_delete',
         errorCode: safeError.code,
         pollId,
+        userId: user.id,
       });
     }
 
@@ -140,4 +141,62 @@ export async function getUserStats() {
     },
     error: null,
   };
+}
+
+// Delete poll by ID (admin only) - simplified version for components
+export async function deletePoll(pollId: string) {
+  // Validate poll ID format
+  const idValidation = validatePollId(pollId);
+  if (!idValidation.valid) {
+    throw new Error(idValidation.error);
+  }
+
+  const supabase = await createClient();
+
+  // Fetch user for logging and tracking
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // Check admin authorization
+  const isAdmin = await isUserAdmin();
+  if (!isAdmin) {
+    throw new Error('Unauthorized: Admin access required');
+  }
+
+  // Delete associated votes first
+  await supabase.from('votes').delete().eq('poll_id', pollId);
+
+  // Delete the poll
+  const { error: deleteError } = await supabase
+    .from('polls')
+    .delete()
+    .eq('id', pollId);
+
+  if (deleteError) {
+    const safeError = sanitizeError(deleteError, {
+      userId: user?.id,
+      action: 'admin_poll_delete',
+      resource: pollId,
+      timestamp: new Date().toISOString(),
+    });
+
+    if (user) {
+      await logSecurityEvent('ERROR_OCCURRED', {
+        action: 'admin_poll_delete',
+        errorCode: safeError.code,
+        pollId,
+        userId: user.id,
+      });
+    }
+
+    throw new Error(safeError.message);
+  }
+
+  // Track admin poll deletion activity
+  if (user) {
+    await trackSessionActivity(user.id, 'admin_poll_delete');
+  }
+
+  revalidatePath('/admin');
 }

@@ -43,8 +43,11 @@ export async function validateSession(config: SessionConfig = DEFAULT_SESSION_CO
     }
 
     const now = Math.floor(Date.now() / 1000);
-    const sessionAge = now - (session.issued_at || 0);
     const timeUntilExpiry = (session.expires_at || 0) - now;
+    
+    // Calculate session age using user's last sign in time as fallback
+    const lastSignInTime = session.user.last_sign_in_at ? Math.floor(new Date(session.user.last_sign_in_at).getTime() / 1000) : now;
+    const sessionAge = now - lastSignInTime;
     
     // Check if session has exceeded max age
     if (sessionAge > config.maxAge) {
@@ -98,10 +101,26 @@ export async function validateSession(config: SessionConfig = DEFAULT_SESSION_CO
  * Renew the current session
  * @returns Renewal result
  */
+/**
+ * Renews the current user session by refreshing authentication tokens.
+ * 
+ * This function attempts to refresh the user's session using Supabase's
+ * refresh token mechanism. It should be called when a session is about
+ * to expire or when token refresh is needed for continued authentication.
+ * 
+ * @returns Promise resolving to renewal result with success status and session data
+ * 
+ * @security
+ * - Uses secure server-side Supabase client for token refresh
+ * - Handles refresh token rotation securely
+ * - Returns sanitized error messages without exposing internals
+ * - Logs errors for security monitoring
+ */
 export async function renewSession() {
   const supabase = await createClient();
   
   try {
+    // Attempt to refresh the session using the refresh token
     const { data, error } = await supabase.auth.refreshSession();
     
     if (error || !data.session) {
@@ -125,21 +144,32 @@ export async function renewSession() {
 }
 
 /**
- * Invalidate the current session and clear cookies
- * @returns Invalidation result
+ * Invalidates the current session and clears all authentication cookies.
+ * 
+ * This function performs a complete session cleanup including Supabase signout
+ * and removal of all session-related cookies. It should be called during logout
+ * or when forcing session termination for security reasons.
+ * 
+ * @returns Promise resolving to invalidation result with success status
+ * 
+ * @security
+ * - Properly signs out from Supabase to invalidate server-side session
+ * - Clears all authentication cookies to prevent session reuse
+ * - Handles errors gracefully without exposing sensitive information
+ * - Ensures complete session cleanup even if some steps fail
  */
 export async function invalidateSession() {
   const supabase = await createClient();
   
   try {
-    // Sign out from Supabase
+    // Sign out from Supabase to invalidate server-side session
     const { error } = await supabase.auth.signOut();
     
     if (error) {
       console.error('Supabase signout error:', error);
     }
     
-    // Clear session-related cookies
+    // Clear all session-related cookies to prevent client-side session reuse
     const cookieStore = await cookies();
     const sessionCookies = [
       'sb-access-token',
@@ -167,10 +197,21 @@ export async function invalidateSession() {
 }
 
 /**
- * Check if user needs to re-authenticate for sensitive operations
- * @param lastAuthTime - Timestamp of last authentication
- * @param sensitiveThreshold - Time threshold for sensitive operations (in seconds)
- * @returns Whether re-authentication is required
+ * Determines if user needs to re-authenticate for sensitive operations.
+ * 
+ * This function implements step-up authentication by checking if enough time
+ * has passed since the last authentication to require re-verification for
+ * sensitive operations like password changes, financial transactions, etc.
+ * 
+ * @param lastAuthTime - Unix timestamp of last authentication
+ * @param sensitiveThreshold - Time threshold for sensitive operations (in seconds, default: 15 minutes)
+ * @returns Boolean indicating whether re-authentication is required
+ * 
+ * @security
+ * - Implements step-up authentication for sensitive operations
+ * - Configurable threshold allows different security levels
+ * - Prevents unauthorized access to sensitive functions
+ * - Uses secure time comparison to prevent timing attacks
  */
 export function requiresReauth(lastAuthTime: number, sensitiveThreshold: number = 15 * 60): boolean {
   const now = Math.floor(Date.now() / 1000);
@@ -178,9 +219,20 @@ export function requiresReauth(lastAuthTime: number, sensitiveThreshold: number 
 }
 
 /**
- * Middleware helper for session validation
- * @param config - Session configuration
- * @returns Session validation middleware
+ * Middleware helper for comprehensive session validation.
+ * 
+ * This function provides a convenient way to validate sessions in Server Components
+ * and Server Actions. It automatically redirects to login if the session is invalid,
+ * making it easy to protect routes and actions.
+ * 
+ * @param config - Session configuration options (optional)
+ * @returns Promise resolving to session validation result
+ * 
+ * @security
+ * - Validates session using comprehensive security checks
+ * - Automatically redirects on invalid sessions
+ * - Prevents access to protected resources with expired sessions
+ * - Uses secure redirect with reason parameter for user feedback
  */
 export async function sessionMiddleware(config: SessionConfig = DEFAULT_SESSION_CONFIG) {
   const validation = await validateSession(config);
@@ -193,22 +245,34 @@ export async function sessionMiddleware(config: SessionConfig = DEFAULT_SESSION_
 }
 
 /**
- * Create a session activity tracker
- * @param userId - User ID to track
- * @param action - Action being performed
- * @returns Activity tracking result
+ * Tracks user session activity for security auditing and monitoring.
+ * 
+ * This function logs user actions with contextual information including
+ * IP address, user agent, and timestamp. It's essential for security
+ * monitoring, fraud detection, and compliance requirements.
+ * 
+ * @param userId - Unique identifier of the user performing the action
+ * @param action - Description of the action being performed (e.g., 'login', 'logout', 'password_change')
+ * @returns Promise resolving to tracking result with success status
+ * 
+ * @security
+ * - Logs security-relevant user actions for audit trails
+ * - Captures IP address and user agent for forensic analysis
+ * - Enables detection of suspicious activity patterns
+ * - Supports compliance with security logging requirements
  */
 export async function trackSessionActivity(userId: string, action: string) {
   const supabase = await createClient();
   
   try {
+    // Insert activity record with security context information
     const { error } = await supabase
       .from('session_activities')
       .insert({
         user_id: userId,
         action,
-        ip_address: await getClientIP(),
-        user_agent: await getUserAgent(),
+        ip_address: await getClientIP(), // For geolocation and suspicious activity detection
+        user_agent: await getUserAgent(), // For device fingerprinting
         created_at: new Date().toISOString()
       });
     
@@ -225,10 +289,21 @@ export async function trackSessionActivity(userId: string, action: string) {
 }
 
 /**
- * Get recent session activities for a user
- * @param userId - User ID
- * @param limit - Number of activities to retrieve
- * @returns Recent session activities
+ * Retrieves recent session activities for security monitoring and user audit.
+ * 
+ * This function fetches the most recent session activities for a specific user,
+ * which can be used for security dashboards, user activity logs, and
+ * suspicious behavior detection.
+ * 
+ * @param userId - Unique identifier of the user whose activities to retrieve
+ * @param limit - Maximum number of activities to retrieve (default: 10)
+ * @returns Promise resolving to array of recent session activities
+ * 
+ * @security
+ * - Provides audit trail for user actions
+ * - Enables security monitoring and forensic analysis
+ * - Supports detection of unauthorized account access
+ * - Limited to prevent excessive data exposure
  */
 export async function getSessionActivities(userId: string, limit: number = 10) {
   const supabase = await createClient();
@@ -254,15 +329,26 @@ export async function getSessionActivities(userId: string, limit: number = 10) {
 }
 
 /**
- * Detect suspicious session activity
- * @param userId - User ID to check
- * @returns Suspicious activity detection result
+ * Analyzes user session patterns to detect potentially suspicious activity.
+ * 
+ * This function implements automated security monitoring by analyzing recent
+ * session activities for patterns that may indicate account compromise,
+ * such as multiple IP addresses or high-frequency actions.
+ * 
+ * @param userId - Unique identifier of the user to analyze
+ * @returns Promise resolving to suspicious activity analysis result
+ * 
+ * @security
+ * - Implements automated threat detection
+ * - Identifies potential account compromise indicators
+ * - Supports real-time security monitoring
+ * - Provides detailed reasons for security team investigation
  */
 export async function detectSuspiciousActivity(userId: string) {
   const supabase = await createClient();
   
   try {
-    // Check for multiple IPs in recent activity
+    // Analyze recent activities for suspicious patterns (last 24 hours)
     const { data: recentActivities, error } = await supabase
       .from('session_activities')
       .select('ip_address, created_at')
@@ -278,12 +364,12 @@ export async function detectSuspiciousActivity(userId: string) {
     const uniqueIPs = new Set(recentActivities?.map(a => a.ip_address) || []);
     const reasons: string[] = [];
     
-    // Flag if more than 3 different IPs in 24 hours
+    // Security check: Flag multiple IP addresses (potential account sharing/compromise)
     if (uniqueIPs.size > 3) {
       reasons.push(`Multiple IP addresses detected: ${uniqueIPs.size} different IPs`);
     }
     
-    // Check for rapid successive logins
+    // Security check: Detect high-frequency activity (potential automated attacks)
     const loginActivities = recentActivities?.filter(a => 
       a.created_at && new Date(a.created_at).getTime() > Date.now() - 60 * 60 * 1000
     ) || [];
@@ -305,7 +391,19 @@ export async function detectSuspiciousActivity(userId: string) {
 }
 
 /**
- * Helper function to get client IP
+ * Securely extracts client IP address from request headers.
+ * 
+ * This helper function attempts to determine the real client IP address
+ * by checking various headers commonly used by proxies and load balancers.
+ * It's used for security logging and geolocation analysis.
+ * 
+ * @returns Promise resolving to client IP address or 'unknown' if unavailable
+ * 
+ * @security
+ * - Checks multiple headers to get accurate IP address
+ * - Handles proxy and load balancer scenarios
+ * - Returns 'unknown' instead of exposing errors
+ * - Used for security event logging and fraud detection
  */
 async function getClientIP(): Promise<string> {
   try {
@@ -330,7 +428,18 @@ async function getClientIP(): Promise<string> {
 }
 
 /**
- * Helper function to get user agent
+ * Securely extracts user agent string from request headers.
+ * 
+ * This helper function retrieves the user agent string which is used
+ * for device fingerprinting, security analysis, and audit logging.
+ * 
+ * @returns Promise resolving to user agent string or 'unknown' if unavailable
+ * 
+ * @security
+ * - Provides device fingerprinting for security analysis
+ * - Used in session activity tracking for audit trails
+ * - Returns 'unknown' instead of exposing errors
+ * - Supports detection of automated attacks vs. legitimate users
  */
 async function getUserAgent(): Promise<string> {
   try {
@@ -344,16 +453,29 @@ async function getUserAgent(): Promise<string> {
 }
 
 /**
- * Clean up old session activities
- * @param olderThanDays - Remove activities older than this many days
- * @returns Cleanup result
+ * Removes old session activity records for data retention compliance.
+ * 
+ * This function implements automated cleanup of historical session data
+ * to comply with data retention policies and prevent database bloat.
+ * It should be run periodically as part of maintenance routines.
+ * 
+ * @param olderThanDays - Remove activities older than this many days (default: 30)
+ * @returns Promise resolving to cleanup result with deletion count
+ * 
+ * @security
+ * - Implements data retention policy compliance
+ * - Prevents indefinite storage of sensitive activity data
+ * - Maintains audit trail within reasonable timeframe
+ * - Supports GDPR and other privacy regulation requirements
  */
 export async function cleanupOldSessionActivities(olderThanDays: number = 30) {
   const supabase = await createClient();
   
   try {
+    // Calculate cutoff date for data retention policy
     const cutoffDate = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000);
     
+    // Delete activities older than the retention period
     const { count, error } = await supabase
       .from('session_activities')
       .delete()

@@ -103,10 +103,11 @@ export async function createPoll(formData: FormData) {
       timestamp: new Date().toISOString()
     });
     
-    logSecurityEvent('ERROR_OCCURRED', {
+    await logSecurityEvent('ERROR_OCCURRED', {
       action: 'poll_create',
-      errorCode: safeError.code
-    }, user.id);
+      errorCode: safeError.code,
+      userId: user.id
+    });
     
     return { error: safeError.message };
   }
@@ -237,11 +238,12 @@ export async function submitVote(pollId: string, optionIndex: number) {
       timestamp: new Date().toISOString()
     });
     
-    logSecurityEvent('ERROR_OCCURRED', {
+    await logSecurityEvent('ERROR_OCCURRED', {
       action: 'vote',
       errorCode: safeError.code,
-      pollId
-    }, user.id);
+      pollId,
+      userId: user.id
+    });
     
     return { error: safeError.message };
   }
@@ -312,11 +314,12 @@ export async function deletePoll(formData: FormData) {
       timestamp: new Date().toISOString()
     });
     
-    logSecurityEvent('ERROR_OCCURRED', {
+    await logSecurityEvent('ERROR_OCCURRED', {
       action: 'poll_delete',
       errorCode: safeError.code,
-      pollId: id
-    }, user.id);
+      pollId: id,
+      userId: user.id
+    });
     
     return { error: safeError.message };
   }
@@ -386,11 +389,12 @@ export async function updatePoll(pollId: string, formData: FormData) {
       timestamp: new Date().toISOString()
     });
     
-    logSecurityEvent('ERROR_OCCURRED', {
+    await logSecurityEvent('ERROR_OCCURRED', {
       action: 'poll_update',
       errorCode: safeError.code,
-      pollId
-    }, user.id);
+      pollId,
+      userId: user.id
+    });
     
     return { error: safeError.message };
   }

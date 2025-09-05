@@ -10,11 +10,14 @@ import { logSecurityEvent } from './error-handling';
 export async function isUserAdmin(userId?: string): Promise<boolean> {
   try {
     const supabase = await createClient();
-    
+
     // Get current user if no userId provided
     let targetUserId = userId;
     if (!targetUserId) {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
       if (userError || !user) {
         return false;
       }
@@ -31,20 +34,20 @@ export async function isUserAdmin(userId?: string): Promise<boolean> {
 
     if (error) {
       // Log security event for admin check failures
-      await logSecurityEvent('ADMIN_CHECK_FAILED', {
+      await logSecurityEvent('ERROR_OCCURRED', {
         error: error.message,
-        userId: targetUserId
-      }, targetUserId);
+        userId: targetUserId,
+      });
       return false;
     }
 
     const isAdmin = roles && roles.length > 0;
-    
+
     // Log admin access attempts for security monitoring
     if (isAdmin) {
-      await logSecurityEvent('ADMIN_ACCESS_GRANTED', {
-        userId: targetUserId
-      }, targetUserId);
+      await logSecurityEvent('ADMIN_ACCESS', {
+        userId: targetUserId,
+      });
     }
 
     return isAdmin;
@@ -52,7 +55,7 @@ export async function isUserAdmin(userId?: string): Promise<boolean> {
     // Log any unexpected errors
     await logSecurityEvent('ADMIN_CHECK_ERROR', {
       error: error instanceof Error ? error.message : 'Unknown error',
-      userId: userId || 'unknown'
+      userId: userId || 'unknown',
     });
     return false;
   }
@@ -64,16 +67,19 @@ export async function isUserAdmin(userId?: string): Promise<boolean> {
  * @param grantedBy - Admin user ID granting the role
  * @returns Promise<{success: boolean, error?: string}>
  */
-export async function grantAdminRole(targetUserId: string, grantedBy?: string): Promise<{success: boolean, error?: string}> {
+export async function grantAdminRole(
+  targetUserId: string,
+  grantedBy?: string,
+): Promise<{ success: boolean; error?: string }> {
   try {
     const supabase = await createClient();
-    
+
     // Verify the granting user is admin
     const isGranterAdmin = await isUserAdmin(grantedBy);
     if (!isGranterAdmin) {
       await logSecurityEvent('UNAUTHORIZED_ADMIN_GRANT_ATTEMPT', {
         targetUserId,
-        attemptedBy: grantedBy || 'unknown'
+        userId: grantedBy || 'unknown',
       });
       return { success: false, error: 'Unauthorized: Admin access required' };
     }
@@ -91,35 +97,34 @@ export async function grantAdminRole(targetUserId: string, grantedBy?: string): 
     }
 
     // Grant admin role
-    const { error } = await supabase
-      .from('user_roles')
-      .insert({
-        user_id: targetUserId,
-        role: 'admin',
-        granted_by: grantedBy
-      });
+    const { error } = await supabase.from('user_roles').insert({
+      user_id: targetUserId,
+      role: 'admin',
+      granted_by: grantedBy,
+    });
 
     if (error) {
       await logSecurityEvent('ADMIN_GRANT_FAILED', {
         targetUserId,
-        grantedBy: grantedBy || 'unknown',
-        error: error.message
+        userId: grantedBy || 'unknown',
+        error: error.message,
       });
       return { success: false, error: error.message };
     }
 
     await logSecurityEvent('ADMIN_ROLE_GRANTED', {
       targetUserId,
-      grantedBy: grantedBy || 'unknown'
+      userId: grantedBy || 'unknown',
     });
 
     return { success: true };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
     await logSecurityEvent('ADMIN_GRANT_ERROR', {
       targetUserId,
-      grantedBy: grantedBy || 'unknown',
-      error: errorMessage
+      userId: grantedBy || 'unknown',
+      error: errorMessage,
     });
     return { success: false, error: errorMessage };
   }
@@ -131,16 +136,19 @@ export async function grantAdminRole(targetUserId: string, grantedBy?: string): 
  * @param revokedBy - Admin user ID revoking the role
  * @returns Promise<{success: boolean, error?: string}>
  */
-export async function revokeAdminRole(targetUserId: string, revokedBy?: string): Promise<{success: boolean, error?: string}> {
+export async function revokeAdminRole(
+  targetUserId: string,
+  revokedBy?: string,
+): Promise<{ success: boolean; error?: string }> {
   try {
     const supabase = await createClient();
-    
+
     // Verify the revoking user is admin
     const isRevokerAdmin = await isUserAdmin(revokedBy);
     if (!isRevokerAdmin) {
       await logSecurityEvent('UNAUTHORIZED_ADMIN_REVOKE_ATTEMPT', {
         targetUserId,
-        attemptedBy: revokedBy || 'unknown'
+        userId: revokedBy || 'unknown',
       });
       return { success: false, error: 'Unauthorized: Admin access required' };
     }
@@ -148,7 +156,7 @@ export async function revokeAdminRole(targetUserId: string, revokedBy?: string):
     // Prevent self-revocation
     if (targetUserId === revokedBy) {
       await logSecurityEvent('ADMIN_SELF_REVOKE_ATTEMPT', {
-        userId: targetUserId
+        userId: targetUserId,
       });
       return { success: false, error: 'Cannot revoke your own admin role' };
     }
@@ -163,24 +171,25 @@ export async function revokeAdminRole(targetUserId: string, revokedBy?: string):
     if (error) {
       await logSecurityEvent('ADMIN_REVOKE_FAILED', {
         targetUserId,
-        revokedBy: revokedBy || 'unknown',
-        error: error.message
+        userId: revokedBy || 'unknown',
+        error: error.message,
       });
       return { success: false, error: error.message };
     }
 
     await logSecurityEvent('ADMIN_ROLE_REVOKED', {
       targetUserId,
-      revokedBy: revokedBy || 'unknown'
+      userId: revokedBy || 'unknown',
     });
 
     return { success: true };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
     await logSecurityEvent('ADMIN_REVOKE_ERROR', {
       targetUserId,
-      revokedBy: revokedBy || 'unknown',
-      error: errorMessage
+      userId: revokedBy || 'unknown',
+      error: errorMessage,
     });
     return { success: false, error: errorMessage };
   }
@@ -191,15 +200,17 @@ export async function revokeAdminRole(targetUserId: string, revokedBy?: string):
  * @param requestedBy - Admin user ID requesting the list
  * @returns Promise<{admins: Array, error?: string}>
  */
-export async function listAdminUsers(requestedBy?: string): Promise<{admins: any[], error?: string}> {
+export async function listAdminUsers(
+  requestedBy?: string,
+): Promise<{ admins: any[]; error?: string }> {
   try {
     const supabase = await createClient();
-    
+
     // Verify the requesting user is admin
     const isRequesterAdmin = await isUserAdmin(requestedBy);
     if (!isRequesterAdmin) {
       await logSecurityEvent('UNAUTHORIZED_ADMIN_LIST_ATTEMPT', {
-        attemptedBy: requestedBy || 'unknown'
+        userId: requestedBy || 'unknown',
       });
       return { admins: [], error: 'Unauthorized: Admin access required' };
     }
@@ -207,7 +218,8 @@ export async function listAdminUsers(requestedBy?: string): Promise<{admins: any
     // Get all admin users with profile information
     const { data: admins, error } = await supabase
       .from('user_roles')
-      .select(`
+      .select(
+        `
         user_id,
         granted_by,
         granted_at,
@@ -215,29 +227,31 @@ export async function listAdminUsers(requestedBy?: string): Promise<{admins: any
           email,
           full_name
         )
-      `)
+      `,
+      )
       .eq('role', 'admin')
       .order('granted_at', { ascending: false });
 
     if (error) {
       await logSecurityEvent('ADMIN_LIST_FAILED', {
-        requestedBy: requestedBy || 'unknown',
-        error: error.message
+        userId: requestedBy || 'unknown',
+        error: error.message,
       });
       return { admins: [], error: error.message };
     }
 
     await logSecurityEvent('ADMIN_LIST_ACCESSED', {
-      requestedBy: requestedBy || 'unknown',
-      adminCount: admins?.length || 0
+      userId: requestedBy || 'unknown',
+      adminCount: admins?.length || 0,
     });
 
     return { admins: admins || [], error: undefined };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
     await logSecurityEvent('ADMIN_LIST_ERROR', {
-      requestedBy: requestedBy || 'unknown',
-      error: errorMessage
+      userId: requestedBy || 'unknown',
+      error: errorMessage,
     });
     return { admins: [], error: errorMessage };
   }

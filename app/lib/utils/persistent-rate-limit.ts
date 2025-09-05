@@ -57,6 +57,7 @@ export async function checkPersistentRateLimit(
       // Fallback to allowing the request if we can't check
       return {
         success: true,
+        allowed: true,
         remaining: limit.maxRequests - 1,
         resetTime: new Date(now.getTime() + limit.windowMs),
       };
@@ -70,6 +71,7 @@ export async function checkPersistentRateLimit(
     if (currentCount >= limit.maxRequests) {
       return {
         success: false,
+        allowed: false,
         remaining: 0,
         resetTime,
         error: `Rate limit exceeded. Try again after ${new Date(
@@ -92,6 +94,7 @@ export async function checkPersistentRateLimit(
 
     return {
       success: true,
+      allowed: true,
       remaining,
       resetTime,
     };
@@ -100,6 +103,7 @@ export async function checkPersistentRateLimit(
     // Fallback to allowing the request
     return {
       success: true,
+      allowed: true,
       remaining: limit.maxRequests - 1,
       resetTime: new Date(now.getTime() + limit.windowMs),
     };
@@ -134,6 +138,7 @@ export async function getRateLimitStatus(
       console.error('Rate limit status error:', error);
       return {
         success: true,
+        allowed: true,
         remaining: limit.maxRequests,
         resetTime: new Date(now.getTime() + limit.windowMs),
       };
@@ -145,6 +150,7 @@ export async function getRateLimitStatus(
 
     return {
       success: currentCount < limit.maxRequests,
+      allowed: currentCount < limit.maxRequests,
       remaining,
       resetTime,
     };
@@ -152,6 +158,7 @@ export async function getRateLimitStatus(
     console.error('Rate limit status check error:', error);
     return {
       success: true,
+      allowed: true,
       remaining: limit.maxRequests,
       resetTime: new Date(now.getTime() + limit.windowMs),
     };

@@ -25,6 +25,7 @@ export interface RateLimitConfig {
 
 export interface RateLimitResult {
   success: boolean;
+  allowed: boolean;
   limit: number;
   remaining: number;
   resetTime: number;
@@ -55,6 +56,7 @@ export function checkRateLimit(
     
     return {
       success: true,
+      allowed: true,
       limit: config.maxRequests,
       remaining: config.maxRequests - 1,
       resetTime: entry.resetTime,
@@ -65,6 +67,7 @@ export function checkRateLimit(
   if (entry.count >= config.maxRequests) {
     return {
       success: false,
+      allowed: false,
       limit: config.maxRequests,
       remaining: 0,
       resetTime: entry.resetTime,
@@ -77,6 +80,7 @@ export function checkRateLimit(
   
   return {
     success: true,
+    allowed: true,
     limit: config.maxRequests,
     remaining: config.maxRequests - entry.count,
     resetTime: entry.resetTime,
